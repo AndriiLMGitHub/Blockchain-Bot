@@ -67,12 +67,17 @@ async def cmd_start(message: Message) -> None:
             "2️⃣ BASE ↓ і QUOTE ↓  одночасно\n\n"
             "Команди:\n"
             "/price — поточні значення\n"
-            "/stop  — відписатись",
+            "/stop  — відписатись\n"
+            "/subscribers — кількість підписників",
             parse_mode="HTML",
         )
     else:
         await message.answer("Ви вже підписані. /stop — відписатись.")
 
+@dp.message(Command("subscribers"))
+async def cmd_subscribers(message: Message) -> None:
+    subs = get_subscribers()
+    await message.answer(f"👥 Підписників: <b>{len(subs)}</b>")
 
 @dp.message(Command("stop"))
 async def cmd_stop(message: Message) -> None:

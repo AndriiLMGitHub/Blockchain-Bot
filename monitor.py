@@ -1,5 +1,7 @@
 import asyncio
+import os
 import aiohttp
+import json
 import logging
 from dataclasses import dataclass
 from typing import Callable, Awaitable
@@ -7,6 +9,8 @@ from typing import Callable, Awaitable
 from config import DEX_API_URL, CHECK_INTERVAL, BASE_UP_QUOTE_DOWN_THRESHOLD
 
 logger = logging.getLogger(__name__)
+
+SUBSCRIBERS_FILE = "subscribers.json"
 
 
 @dataclass
@@ -24,15 +28,32 @@ class AlertEvent:
     quote_change: float
 
 
+
+def _load_subscribers() -> list[int]:
+    if os.path.exists(SUBSCRIBERS_FILE):
+        try:
+            with open(SUBSCRIBERS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def _save_subscribers() -> None:
+    with open(SUBSCRIBERS_FILE, "w") as f:
+        json.dump(_subscribers, f)
+
+
 # ── State ─────────────────────────────────────────────────────────────────────
 
 _last_snapshot: LiquiditySnapshot | None = None
-_subscribers: list[int] = []
+_subscribers: list[int] = _load_subscribers()  # ← завантажуємо при старті
 
 
 def subscribe(chat_id: int) -> bool:
     if chat_id not in _subscribers:
         _subscribers.append(chat_id)
+        _save_subscribers()  # ← зберігаємо
         return True
     return False
 
@@ -40,6 +61,7 @@ def subscribe(chat_id: int) -> bool:
 def unsubscribe(chat_id: int) -> bool:
     if chat_id in _subscribers:
         _subscribers.remove(chat_id)
+        _save_subscribers()  # ← зберігаємо
         return True
     return False
 
@@ -70,6 +92,8 @@ async def fetch_snapshot(session: aiohttp.ClientSession) -> LiquiditySnapshot | 
             liquidity = pairs[0].get("liquidity", {})
             base  = liquidity.get("base")
             quote = liquidity.get("quote")
+
+            print(f"Fetched snapshot — base: {base:.2f} | quote: {quote:.2f}")
 
             if None in (base, quote):
                 logger.warning(f"Missing liquidity fields: {liquidity}")
@@ -126,8 +150,8 @@ async def price_monitor_loop(
 
                         if event:
                             _print_alert(event)
-                            if _subscribers:
-                                await notify_callback(list(_subscribers), event)
+                            logger.info(f"Sending alert to {len(_subscribers)} subscriber(s)")
+                            await notify_callback(list(_subscribers), event)
                     else:
                         logger.info(
                             f"Initial snapshot — base: {snapshot.base:.2f} | "
